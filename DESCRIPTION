@@ -1,0 +1,15 @@
+Simple SMS Send, ssmss is another program to send SMS to mobile phones. 
+It is a perl script which can load plugins to extend its functionality. 
+Those extensions are a collection of functions which allows you to send 
+short messages to any GSM provider through web sites, but is possible 
+develop extensions to communicate with other methods. Extensions are 
+independent and fully functional ready to be used on other projects.
+
+The program has the ability to detect if the user is on graphic mode or 
+text mode. On graphic mode, a GTK-GUI will be launched (only if GTK 
+libraries exist, or else text mode).
+
+It has an addressbook and a provider list, so you can configure multiple 
+providers, options and select which one you want to use.
+
+(c) 2003 José Riguera,  <jriguera@gmail.com>

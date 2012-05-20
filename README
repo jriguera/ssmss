@@ -1,0 +1,47 @@
+
+	ssmss   v 0.30 (c) Enero 2003 José Riguera López <jriguera@gmail.com>
+
+Simple SMS Send a.k.a. ssmmss is another program to send SMS to mobile phones. 
+It is a perl script which can load plugins to extend its functionality. Those 
+extensions are a collection of functions which allows you to send short 
+messages to any GSM provider through web sites, but is possible develop 
+extensions to communicate with other methods. Extensions are independent and 
+fully functional ready to be used on other projects.
+
+The program has the ability to detect if the user is on graphic mode or text 
+mode. On graphic mode, a GTK-GUI will be launched (only if GTK libraries exist, 
+or else text mode).
+
+It has an addressbook and a provider list, so you can configure multiple 
+providers, options and select which one you want to use.
+
+
+Installation:
+
+The program is called "ssmss" and is a perl script with execution permission.
+As a perl script, you need to have perl installed, minimum getopt module,  and 
+if you want the GUI, you also need the GTK module.
+
+1. Copy 'ssmss' to '/usr/local/bin'
+
+2. Check permissions (usually '-rwxr-xr-x' and 'root' as owner and group). If 
+you do not have these permissions, type in console: 'man chmod' and 'man chown'. 
+Once you read this, I think you will be able to do it ... Well, here you are:
+
+	chown root: root ssmss
+	chmod 0755 ssmss
+
+3. Create the directory '~/.ssmss' and copy the files 'ssmss.conf' and 
+'addressbook.txt' from 'examples' directory to '~/.ssmss'. You can edit those 
+files as you wish following the inside instructions.
+
+5. Create '~/.ssmss/modules' and copy in that folder all modules from directory 
+'modules' checking permissions. Remember to set up the modules in the 
+configuration file '~/.ssmss/ssmss.conf'.
+
+6. Go to rest and reflect on what you've done, just about two hours, although 
+some people need four, I think in your case;-) is enough with five.
+
+7. Type 'ssmss' and ...
+
+

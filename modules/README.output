@@ -1,0 +1,24 @@
+
+	Output.pm   v 0.10 (c) Enero 2003 José Riguera <j.riguera@gmx.net>
+
+Example module/extension/plugin which shows the operation of the modules 
+with the program 'ssmss', also serves as a template to develop new modules.
+
+Installation:
+
+Simply copy the file Output.pm to the directory where the modules are, 
+usually '~/.ssmss/modules', you only need read permissions.
+
+
+If you are interested in seeing how the modules work, or you want to 
+program one, ..., use the module called 'Output.pm'.  This module is an 
+example so you can just fill the functions with the appropriate code and 
+run it!. By the way, you will participate in a free software project. 
+If you do not know how to become a programmer (in perl) but you want to
+participate in the project, you can! ... What? ... Providing ideas, 
+translating the messages into other languages, etc... 
+Send me an email now!
+
+	José Riguera Lopez <jriguera@gmail.com>
+
+#EOF

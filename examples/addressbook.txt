@@ -1,0 +1,40 @@
+# Agenda.txt
+#
+# Esto es un ejemplo del fichero que almacena todos
+# los contactos.
+
+# Nota:
+# Todos los datos de este fichero son falsos, cualquier parecido
+# con la realidad es pura coincidencia (por si acaso) ;-)
+
+# Los registros se añaden a este fichero a partir del ultimo
+# registro (append), si hay huecos en blanco (lineas en blanco) o
+# comentarios no se sobreescribiran o borraran, quedaran en el
+# fichero.
+# Al borran un registro, se borra la linea completa, por lo que
+# los posibles comentarios en la linea, tambien seran borrados.
+
+# Esto es un comentario y no se tendra en cuenta, al igual que las
+# lineas en blanco.
+
+# Empiezan los ejemplos
+
+Fulanito de cual (fulano) = 123456789
+
+# Este contacto tiene por nombre "Fulanito de cual" y tiene un alias
+# (apodo) "fulano". El alias ayuda a identificar (escribir) mas rapido
+# un nombre de un contacto (sobre todo en modo texto).
+
+# Por ejemplo para enviar un sms a "Fulanito de cual" en modo texto:
+# ssmss -t --module Output  fulano  --sms "Hola Fulanito de cual" 
+# no  hay necesidad de escribir el nombre completo, lo mismo ocurre 
+#  si se lanza el modo grafico y se escribe directamente el alias 
+# en el campo "destino/s" (entry).
+
+Mengano=111111111
+
+Dolores Fuertes De Barriga = 906906906
+Juanito = 234234567
+
+Anastasia = 897642123
+Cirilio = 341123890

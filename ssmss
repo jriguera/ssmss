@@ -1,0 +1,2172 @@
+#!/usr/bin/perl -w
+#
+#    ssmss, a linux perl script for send short messages 
+#    to gsm phones.
+#
+#    Copyright (C) Enero 2003 José Riguera <jriguera@gmail.com>
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program; if not, write to the Free Software
+#    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+#
+#    Redistribution and use in source and binary forms, with or without
+#    modification, are permitted provided that the following conditions are met:
+#    1. Redistributions of source code must retain the above copyright
+#       notice, this list of conditions and the following disclaimer.
+#    2. Redistributions in binary form must reproduce the above copyright
+#       notice, this list of conditions and the following disclaimer in the
+#       documentation and/or other materials provided with the distribution.
+#    3. Neither the name of José Riguera nor the names of his
+#       contributors may be used to endorse or promote products derived from
+#       this software without specific prior written permission.
+# 
+require 5.005;
+use Getopt::Long;
+use strict 'vars';
+use strict 'subs';
+#use strict 'refs';
+
+
+
+# Principio de la historia
+
+# "Constantes" :-)
+
+sub TRUE()              { 1 }
+sub FALSE()             { 0 }
+sub MODULE_FONT()       { "-B&H-Lucida-Medium-R-Normal-Sans-11-80-100-100-P-63-ISO8859-15" }
+sub SMS_FONT()          { "-B&H-Lucida-Medium-R-Normal-Sans-14-100-100-100-P-80-ISO8859-15" }
+sub COLOR_AZUL()        { Gtk::Gdk::Color->parse_color ("blue") }
+sub COLOR_NEGRO()       { Gtk::Gdk::Color->parse_color ("black") }
+sub COLOR_VERDE()       { Gtk::Gdk::Color->parse_color ("green") }
+sub COLOR_BLANCO()      { Gtk::Gdk::Color->parse_color ("white") }
+sub COLOR_CYAN()        { Gtk::Gdk::Color->parse_color ("cyan") }
+sub CAR_SMS_SIG()       { " #->" }
+sub CAR_SMS_ANT()       { "<... " }
+sub CONF_FILE()         { return $ENV{HOME}."/.ssmss/ssmss.conf" }
+
+
+# Variable global empleada por las funciones que muestran informacion
+# acerca de este programa. Es la única variable global del programa
+
+# my $programa = $0;
+# $programa =~ s#^.*/##;
+
+my %globalconf;
+$globalconf{programa} = "ssmss";
+$globalconf{version} = "0.30";
+$globalconf{conf} = CONF_FILE;
+$globalconf{autor} = "José Riguera";
+$globalconf{mail} = "jriguera\@gmail.com";
+$globalconf{fecha} = "Enero 2003";
+$globalconf{descripcion}="Este programa es un script en perl capaz de enviar mensajes sms a teléfonos, para ello emplea varios módulos que implementan las funciones necesarias para poder usar determinadas pasarelas disponibles";
+
+
+
+###############################################################################
+#                                                                             #
+# Funcion principal, gestiona todos los argumentos del programa y             #
+# determina si se lanza la GUI                                                #
+#                                                                             #
+###############################################################################
+
+sub programa
+{
+    my $mail;
+    my $modulo;
+    my $mensaje;
+    my $password;
+    my $login;
+
+
+    my $flag_pipe = 0;
+    my $flag_listar = 0;
+    my $flag_textmode = 0;
+    my $flag_anonymous = 0;
+    my $flag_confirm = 0;
+    my $flag_long = 0;
+    my $flag_localaddressbook = 0;
+    my $flag_remoteaddressbook = 0;
+
+    Getopt::Long::Configure ("gnu_getopt");
+    Getopt::Long::Configure ("permute");
+    Getopt::Long::Configure ("no_gnu_compat");
+
+    my $fichero_configuracion = CONF_FILE;
+    my $no_conf = 0;
+
+    my %configuracion_fichero;
+    if (leer_configuracion ($fichero_configuracion, \%configuracion_fichero) == -1)
+    {
+        print STDERR "OJO, No existe la configuracion por defecto '".CONF_FILE."'\n";
+        $no_conf = 1;
+    }
+
+    GetOptions ( 'configuration=s' => sub
+                 {
+                     if (leer_configuracion ($_[1], \%configuracion_fichero) == -1)
+                     {
+                         print STDERR "Error, No existe el fichero de configuracion '$_[1]'\n";
+                         exit -1;
+                     }
+                     $no_conf = 0;
+                 },
+                 'M|mail=s' => \$mail,
+                 'module=s' => \$modulo,
+                 'm|sms=s' => \$mensaje,
+                 'L|login=s' => \$login,
+                 'P|password=s' => \$password,
+                 'addressbook=s' => \$configuracion_fichero{'addressbookfile'},
+                 'moduledir=s' => \$configuracion_fichero{'moduledir'},
+                 'anonymous' => sub { $flag_anonymous = 1; },
+                 'confirm' => sub { $flag_confirm = 1; },
+                 'long' => sub { $flag_long = 1; },
+                 'localaddressbook' => sub { $flag_localaddressbook = 1; },
+                 'remoteaddressbook' => sub { $flag_remoteaddressbook = 1; },
+                 't|textmode' => sub { $flag_textmode = 1; },
+                 '' => sub { $flag_pipe = 1; },
+                 'l' => sub
+                 {
+                     die "Error, imposible abrir el fichero: $configuracion_fichero{'addressbookfile'}.\n" if (modotexto_listar_agenda ($configuracion_fichero{'addressbookfile'}) == -1);
+                     $flag_listar=1;
+                 },
+                 'list=s' => sub
+                 {
+                     die "Error, imposible abrir el fichero: $configuracion_fichero{'addressbookfile'}.\n" if (modotexto_listar_agenda ($configuracion_fichero{'addressbookfile'}, $_[1]) == -1);
+                     $flag_listar=1;
+                 },
+                 'h|help' => sub 
+                 { 
+                   print ayuda_programa(); 
+                   exit; 
+                 },
+                 'v|version' => sub 
+                 { 
+                   print version_programa(); 
+                   exit; 
+                 },
+                 'modulelist' => sub { modotexto_listar_modulos ($configuracion_fichero{'moduledir'}); exit; },
+                 'moduleinfo:s' => sub { modotexto_listar_modulos ($configuracion_fichero{'moduledir'}, $_[1]); exit; },
+                 'add=s' => sub { modotexto_anadir_contacto ($configuracion_fichero{'addressbookfile'}, $_[1]); },
+                 'del=s' => sub { modotexto_borrar_contacto ($configuracion_fichero{'addressbookfile'}, $_[1]); }
+               );
+    
+    exit (-1) if (!defined ($configuracion_fichero{'moduledir'}));
+    
+    if (defined $modulo)
+    {
+        $configuracion_fichero{'server'} = $modulo;
+    } else {
+        $modulo = $configuracion_fichero{'server'};
+    }
+
+    $configuracion_fichero{'mail:'.$modulo} = $mail if (defined $mail);
+    $configuracion_fichero{'login:'.$modulo} = $login if (defined $login);
+    $configuracion_fichero{'password:'.$modulo} = $password if (defined $password);
+    $configuracion_fichero{'anonymoussms:'.$modulo} = 'on' if ($flag_anonymous);
+    $configuracion_fichero{'confirmsms:'.$modulo} = 'on' if ($flag_confirm);
+    $configuracion_fichero{'longsms:'.$modulo} = 'on' if ($flag_long);
+    $configuracion_fichero{'localaddressbook:'.$modulo} = 'on' if ($flag_localaddressbook);
+    $configuracion_fichero{'remoteaddressbook:'.$modulo} = 'on' if ($flag_remoteaddressbook);
+
+    eval {
+        use Gtk;
+        $flag_textmode = 1 if (!defined(init_check Gtk));
+    };
+    $flag_textmode = 1 if ($@ );
+
+    # Modo texto
+
+    if ($flag_textmode == 1)
+    {
+        exit if (($flag_listar == 1) && ($#ARGV<0));
+        die "Falta el parametro destinatario del mensaje sms.\n" if ($#ARGV < 0);
+        die "Error, modulo no definido.\n" if (!defined ($modulo));
+
+        # Llama a la funcion module_init (con los parametros) del modulo seleccionado
+        # y reporta los errores si es que existen
+        my %conf_modulo;
+        my %info;
+
+        eval {
+            require "$configuracion_fichero{'moduledir'}/$modulo.pm";
+            &{"${modulo}::module_init" } (\%conf_modulo, \%info);
+        };
+        if (($@ ) || (!exists ($info{'length'})) || (!exists ($info{'name'})))
+        {
+            print STDERR "Error cargando "."$modulo"."\n";
+            print STDERR "Modulo no cargado.\n";
+            exit -1;
+        }
+        else
+        {            
+            print STDERR "Modulo $modulo cargado.\n" if ($flag_pipe != 1);
+        }
+
+        # Comprobacion de los parametros necesarios por el modulo en uso
+        my %configuracion_dinamica_modulo;
+
+        foreach (keys %conf_modulo)
+        {
+            if ($conf_modulo{$_} eq 'enabled')
+            {
+                if ($_ eq "login")
+                {
+                    if (!exists ($configuracion_fichero{"login:$modulo"}))
+                    {
+                        if (exists ($configuracion_fichero{'login'}))
+                        {
+                            $configuracion_dinamica_modulo{'login'} = $configuracion_fichero{'login'};
+                            next;
+                        }
+                        die "Error, login no definido.\n";
+                    }
+                    $configuracion_dinamica_modulo{'login'} = $configuracion_fichero{"login:$modulo"};
+                    next;
+                }
+                elsif ($_ eq "password")
+                {
+                    if (!exists ($configuracion_fichero{"password:$modulo"}))
+                    {
+                        if (exists ($configuracion_fichero{'password'}))
+                        {
+                            $configuracion_dinamica_modulo{'password'} = $configuracion_fichero{'password'};
+                            next;
+                        }
+                        die "Error, password no definido.\n";
+                    }
+                    $configuracion_dinamica_modulo{'password'} = $configuracion_fichero{"password:$modulo"};
+                    next;
+                }
+                elsif ($_ eq "mail")
+                {
+                    if (!exists ($configuracion_fichero{"mail:$modulo"}))
+                    {
+                        if (exists ($configuracion_fichero{'mail'}))
+                        {
+                            $configuracion_dinamica_modulo{'mail'} = $configuracion_fichero{'mail'};
+                            next;
+                        }
+                        die "Error, mail no definido.\n";
+                    }
+                    die "Error, mail con formato erróneo.\n" if ($configuracion_dinamica_modulo{'mail'} !~ /\@+/);
+                    $configuracion_dinamica_modulo{'mail'} = $configuracion_fichero{"mail:$modulo"};
+                    next;
+                }
+            }
+        }
+
+        # Validar los telefonos o nombres destino
+        my @destino = @ARGV;
+        my @telefonos;
+        if (!(-e $configuracion_fichero{'addressbookfile'}))
+        {
+            warn "Ojo, No existe el fichero agenda: $configuracion_fichero{'addressbookfile'}.\n";
+            foreach (@destino)
+            {
+                die "Error, destinatario desconocido: $_.\n" unless ($_ =~ /\d{9}/);
+            }
+            @telefonos = @destino;
+        }
+        else
+        {
+            my %lista;
+            die "Error, imposible leer fichero agenda: $configuracion_fichero{'addressbookfile'}.\n"
+                if (leer_agenda ($configuracion_fichero{'addressbookfile'}, \%lista) < 1);
+
+            my $error = validar_destinos (\%lista, \@destino, \@telefonos);
+            if ($error ne 'ok')
+            {
+                $error =~ s/^\sERROR/Error/;
+                die "$error\n";
+            }
+        }
+
+        # Validar mensaje
+        if (!defined ($mensaje))
+        {
+            if (((exists $configuracion_fichero{"longsms:$modulo"}) && ($configuracion_fichero{"longsms:$modulo"} eq 'on')) ||
+                ((exists $configuracion_fichero{"longsms"}) && ($configuracion_fichero{"longsms"} eq 'on')))
+            {
+                $configuracion_dinamica_modulo{"longsms"} = 'on';
+            }
+            else
+            {
+                $configuracion_dinamica_modulo{"longsms"} = 'off';
+            }
+
+            if ($flag_pipe != 1)
+            {
+                print "\nIntroduzca el mensaje sms, para finalizar introducir una linea vacia con un\n";
+                print "punto, para abortar, CTRL-C. ";
+                print "Si el mensaje supera $info{length} caracteres, será troceado."
+                    if ($configuracion_dinamica_modulo{"longsms"} eq 'off');
+                print "\n\nSMS para ".join(', ',@telefonos).":\n\n";
+            }
+            my $linea;
+            while ($linea = <STDIN>)
+            {
+                last if ($linea =~ /^\s*\.\n/);
+                $mensaje = $mensaje.$linea;
+            }
+            die "Ojo, ¿¡ Mensaje vacio !?\n" if (!defined ($mensaje));
+            print "\n" if ($flag_pipe != 1);
+            chomp ($mensaje);
+        }
+
+        # Crear configuracion del modulo
+
+        if (exists $configuracion_fichero{"anonymoussms:$modulo"})
+        {
+            $configuracion_dinamica_modulo{"anonymoussms"} = $configuracion_fichero{"anonymoussms:$modulo"};
+        } else {
+            $configuracion_dinamica_modulo{"anonymoussms"} = $configuracion_fichero{"anonymoussms"};
+        }
+
+        if (exists $configuracion_fichero{"confirmsms:$modulo"})
+        {
+            $configuracion_dinamica_modulo{"confirmsms"} = $configuracion_fichero{"confirmsms:$modulo"};
+        } else {
+            $configuracion_dinamica_modulo{"confirmsms"} = $configuracion_fichero{"confirmsms"};
+        }
+
+        # Divide el sms en trozos, si procede, y los envia
+        my @trozos;
+        my $retorno;
+
+        if ($configuracion_dinamica_modulo{"longsms"} eq 'on')
+        {
+            @trozos = partir_mensaje ($mensaje, $info{'length'});
+        }
+        else
+        {
+            push (@trozos, $mensaje);
+        }
+
+        foreach my $sms (@trozos)
+        {
+            # Llama a la funcion module_send_sms (con los parametros) del modulo seleccionado
+            # y reporta los errores si es que existen
+
+            eval {
+                $retorno = &{"${modulo}::module_send_sms" } ($sms, \@telefonos, \%configuracion_dinamica_modulo);
+            };
+            if ($@ )
+            {
+                print STDERR "Error en "."$modulo"."::module_send_sms (no definida o con parametros incorrectos)\n";
+                exit -1;
+            }
+            last if ($retorno < 0);
+        }
+        if ($retorno == -1)
+        {
+            print STDERR "\nERROR: Mensaje/s no enviados";
+            exit -1;
+        }
+        elsif ($retorno == 1)
+        {
+            print STDERR "\nOK: Mensaje/s enviado correctamente";
+            exit 1;
+        }
+    }
+
+    # Modo grafico
+    else
+    {
+        gtk_toplevel (\%configuracion_fichero);
+    }
+}
+
+
+
+###############################################################################
+#                                                                             #
+# Funciones generales y basicas del programa, se emplean tando en modo        #
+# texto como en modo gráfico                                                  #
+#                                                                             #
+###############################################################################
+
+
+# Contiene la informacion legal del programa y su version
+
+sub version_programa
+{
+    return sprintf ("
+    %s   %s\n
+Copyright (C) %s %s <%s>\n
+Esto es software libre; puede redistribuirlo y/o modificarlo bajo los términos
+de la Licencia Pública General de GNU (GNU GPL) publicada por la Fundación
+para el Software Libre; bien la versión 2 de la licencia, o (a su elección)
+cualquier versión posterior.
+
+Este programa se distribuye con la esperanza de que sea útil, pero SIN
+NINGUNA GARANTÍA; ni siquiera la garantía implícita de COMERCIABILIDAD o
+IDONEIDAD PARA UN FIN DETERMINADO. Lea la Licencia Pública General de GNU para
+más detalles.
+
+Debería haber recibido una copia de la Licencia Pública General de GNU junto
+con este programa. Si no es así, esciba a Free Software Foundation, Inc.,
+59 Temple Place - Suite 330, Boston, MA 02111-1307, USA
+
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA\n\n",
+$globalconf{programa}, $globalconf{version}, $globalconf{fecha}, $globalconf{autor} ,$globalconf{mail});
+}
+
+
+# Funcion que contiene la ayuda del programa
+
+sub ayuda_programa
+{
+    return sprintf ("
+    %s %s\n\n%s\n
+Modo de empleo: %s TLF [TLF ...]|[NOMBRE ...]|[APODO ...] [OPCION]...
+Envía mensajes SMS al teléfono o nombre indicado a través de un módulo.
+Por defecto las opciones de configuración se guardan en el fichero '%s'\n
+    TLF: número de teléfono del destinatario.
+    NOMBRE: nombre completo del destinatario almacenado en la agenda.
+    APODO: apodo o nick de NOMBRE.\n
+        --add NOMBRE(APODO)=TLF
+        		Introduce el registro NOMBRE(APODO)=TLF en la
+			agenda, NOMBRE es el nombre del destinatario y puede
+                        contener espacios, APODO es otro nombre con el que
+                        identificar a NOMBRE, en caso de no usar apodo el
+                        formato es NOMBRE=TLF y TLF es el número de teléfono
+                        (9 dígitos).
+        --addressbook FILE
+        		Indica que se use FILE como agenda
+        --anonymous (*)
+        		Oculta la identidad del remitente.
+        --configuration FILE
+        		Indica que se lea la configuracion del fichero FILE.
+	--confirm (*)
+        		Comfirma la recepcion del mensaje sms.
+        --del TLF
+        		Borra el/los registro/s de la agenda que tienen
+    			como número de teléfono a TLF.
+    -h, --help
+    			Muestra estas líneas ;-).
+    -l
+    			Lista por orden alfabético el contenido de la agenda.
+        --list PATRON
+        		Lista los nombres de la agenda que encajan con PATRON.
+	--localaddressbook (*)
+        		Carga la agenda local (fichero).
+    -L, --login LOGIN  (*)
+    			Login de autorización de usuario.
+	--long (*)
+        		Evita que se fragmente el sms si excede de los 
+                        caracteres que permite el modulo en uso. Si no se
+                        indica esta opción y el mensaje supera el número de
+                        caracteres, será troceado en varios fragmentos.
+    -M, --mail MAIL (*)
+    			Correo electrónico donde serán enviadas las 
+                        confirmaciones del envío correcto del mensaje.
+        --module MODULE
+        		Indica que se carge el módulo MODULE, en lugar del 
+                        módulo por defecto indicado en el fichero de 
+                        configuración.
+        --moduledir PATH
+        		Directorio donde se encuentran los módulos requeridos.
+        --moduleinfo [MODULE]
+                        Muestra los módulos disponibles y su información.
+                        Si se pasa un nombre de módulo como argumento, se 
+                        muestra la descripción de ese módulo.
+        --modulelist
+                        Muestra todos los módulos disponibles.
+    -P  --password PASS (*)
+    			Contraseña de autorización de usuario.
+    -m, --sms \"MENSAJE\"
+    			Texto del mensaje a enviar, así evita entrar en modo
+			interactivo.
+    	--remoteaddressbook (*)
+        		Carga la agenda remota que se encuentra en la pasarela.
+    -t, --textmode
+    			Fuerza el arranque del programa en modo texto, es decir,
+                        sin la interfaz gráfica.
+    -v, --version
+    			Muestra información sobre la version y la licencia del 
+                        programa.
+
+Las opciones marcadas con (*) pueden no tener efecto, ya que dependen de las
+opciones necesarias por el módulo en uso.
+Si no se fuerza el modo texto (-t) el programa lanzará la interfaz gráfica,
+estableciendo los parámetros pasados como argumentos. Si el programa no
+puede lanzar la GUI (está en una consola o no encuentra las librerías GTK),
+funcionará en modo texto.
+Para que el programa lea el texto del mensaje por la entrada estándar, se
+debe utilizar el parámetro \"-\" (útil para tuberías).
+(c) %s %s <%s>\n\n",
+$globalconf{programa}, $globalconf{version}, $globalconf{descripcion}, $globalconf{programa},
+$globalconf{conf}, $globalconf{fecha}, $globalconf{autor}, $globalconf{mail});
+}
+
+
+# Comprueba la longitud del sms y crea un array con todos los trozos
+# del mensaje original
+
+sub partir_mensaje
+{
+    my $sms = shift;
+    my $longitud = shift;
+
+    my @trozos;
+
+    if (length ($sms) > $longitud)
+    {
+        my $trozo;
+        do {
+            $trozo = substr ($sms, 0, $longitud - length(CAR_SMS_SIG));
+            $sms = substr ($sms, $longitud - length(CAR_SMS_ANT));
+            my $control = 0;
+            while ( substr ($trozo, -1) !~ /[\s,.\b\n]/)
+            {
+                $sms = substr ($trozo, -1).$sms;
+                $trozo = substr ($trozo, 0, -1);
+                last if ($control++ == 15);
+            }
+            $trozo .= CAR_SMS_SIG;
+            $sms = CAR_SMS_ANT.$sms;
+            push (@trozos, $trozo);
+        }
+        while (length ($sms) > $longitud);
+    }
+    push (@trozos, $sms);
+    return @trozos;
+}
+
+
+# Comprueba que los destinos, son correctos, es decir
+# si se encuentran en la agenda
+
+sub validar_destinos
+{
+    my $agenda = shift;
+    my $destino = shift;
+    my $telefono = shift;
+
+
+    return ' ERROR: No se han especificado destino/s de envio' if (scalar @$destino < 1);
+
+    my $error;
+    my $dato;
+    my @claves = keys (%$agenda);
+    
+    foreach $dato (@$destino)
+    {
+        if ($dato =~ /\d{9}/)
+        {
+            push (@$telefono, $dato);
+        }
+        else
+        {
+            my $aux = $$agenda{$dato};
+            if (defined ($aux))
+            {
+                push (@$telefono, $aux);
+            }
+            else
+            {
+                $aux = (grep { /\(\s*$dato\s*\)/ } @claves)[0];
+                if (!defined ($aux))
+                {
+                    $error = ' ERROR: No se encuentra en la agenda : ' if (! defined ($error));
+                    $error .= $dato." ";
+                }
+                else
+                {
+                    push (@$telefono, $$agenda{$aux});
+                }
+            }
+        }
+    }
+    return 'ok' if (!defined ($error));
+    return $error;
+}
+
+
+# Lee todos los contactos de la agenda
+
+sub leer_agenda
+{
+    my $fichero=shift;
+    my $lista=shift;
+    my $nombre;
+    my $tlf;
+    my $dato;
+    
+    return (-1) if (!defined $fichero);
+    if (open (FILE, "$fichero"))
+    {
+        foreach $dato (<FILE>)
+        {
+            next if ($dato =~ /^(\s*#)/);
+            if ($dato =~ /\s*\S+\s*=\s*\d{9}/)
+            {
+                ($nombre,$tlf)=split(/\s*=\s*/,$dato);
+                chomp($tlf);
+                $$lista{$nombre}=$tlf;
+                $$lista{$tlf}=$nombre;
+            }
+        }
+        close FILE;
+        return (1);
+    }
+    return (-1);
+}
+
+
+# Añade un registro a la agenda
+
+sub anadir_contacto_agenda
+{
+    my $fichero=shift;
+    my $registro=shift;
+
+
+    return (-1) if (!(-e $fichero));
+    open (FILE, ">>$fichero");
+    return 0 if ($registro =~ /[\[\]\\\$\|\^\+\*\?\}\{\.]/);
+    if ($registro =~ /\w+\s*=\s?\d{9}|\w*\s*\(\S+\)\s*=\s?\d{9}/)
+    {
+        print FILE "$registro\n";
+        close FILE;
+        return 1;
+    }
+    close FILE;
+    return 0;
+}
+
+
+# Lee la configuracion del fichero de configuracion
+
+sub leer_configuracion
+{
+    my $fichero=shift;
+    my $conf=shift;
+
+
+    if (open (FILE,"$fichero"))
+    {
+        my $dato;
+        foreach $dato (<FILE>)
+        {
+            next if ($dato =~ /^(\s*#)/);
+            if ($dato =~ /^\s*server\s*=\s*(\S+)/)
+            {
+                $$conf{server}=$1;
+            }
+            elsif ($dato =~ /^\s*(login\s*:?\S*?)\s*=\s*(\S+)/)
+            {
+                $$conf{"$1"}=$2;
+            }
+            elsif ($dato =~ /^\s*(password\s*:?\S*?)\s*=\s*(\S+)/)
+            {
+                $$conf{"$1"}=$2;
+            }
+            elsif ($dato =~ /^\s*(mail\s*:?\S*?)\s*=\s*(\S+@\S+)/)
+            {
+                $$conf{"$1"}=$2;
+            }
+            elsif ($dato =~ /^\s*(anonymoussms\s*:?\S*?)\s*=\s*(on|off)/)
+            {
+                $$conf{"$1"}=$2;
+            }
+            elsif ($dato =~ /^\s*(confirmsms\s*:?\S*?)\s*=\s*(on|off)/)
+            {
+                $$conf{"$1"}=$2;
+            }
+            elsif ($dato =~ /^\s*(longsms\s*:?\S*?)\s*=\s*(on|off)/)
+            {
+                $$conf{"$1"}=$2;
+            }
+            elsif ($dato =~ /^\s*(localaddressbook\s*:?\S*?)\s*=\s*(on|off)/)
+            {
+                $$conf{"$1"}=$2;
+            }
+            elsif ($dato =~ /^\s*(remoteaddressbook\s*:?\S*?)\s*=\s*(on|off)/)
+            {
+                $$conf{"$1"}=$2;
+            }
+            elsif ($dato =~ /^\s*addressbookfile\s*=\s*(\S+)/)
+            {
+                $$conf{addressbookfile}=$1;
+            }
+            elsif ($dato =~ /^\s*moduledir\s*=\s*(\S+)/)
+            {
+                $$conf{moduledir}=$1;
+            }
+            elsif ($dato =~ /^\s*(\S+\s*:\S+)\s*=\s*(\S+)/)
+            {
+                $$conf{"$1"}=$2;
+            }
+        }
+        return 1;
+    }
+    return (-1);
+}
+
+
+# Borra un contacto de la agenda
+
+sub borrar_contacto_agenda
+{
+    my $fichero=shift;
+    my $registro=shift;
+    my $existe=0;
+
+
+    return (-1) if ($registro !~ /\d{9}/);
+    my $fichero_aux=$fichero.".~~tmp~~";
+    return (-2) unless (-e $fichero);
+    return (-2) unless rename($fichero,$fichero_aux);
+
+    open (FILE1,">$fichero");
+    open (FILE2,"$fichero_aux");
+    my $dato;
+    foreach $dato (<FILE2>)
+    {
+        if ($dato !~ /^(\s*#)/)
+        {
+            if ($dato =~ /=\s*$registro/)
+            {
+                $existe=1;
+                next;
+            }
+        }
+        print FILE1 $dato;
+    }
+    close FILE1;
+    close FILE2;
+    unlink $fichero_aux;
+
+    return 1 if ($existe == 1);
+    return 0;
+}
+
+
+
+###############################################################################
+#                                                                             #
+# Funciones necesarias sólo en modo texto, no se emplean en ningun caso       #
+# en modo gráfico                                                             #
+#                                                                             #
+###############################################################################
+
+
+# Funcion que lista la informacion del los modulos disponibles
+
+sub modotexto_listar_modulos
+{
+    my $modulo_dir = $_[0];
+
+
+    if (opendir(DIR, $modulo_dir))
+    {
+        my @modulos = grep { /\.pm$/ && -r "$modulo_dir/$_" } readdir (DIR);
+        closedir DIR;
+
+        print "\nMódulo/s leidos en '$modulo_dir':\n";
+
+        my $contador = 0;
+        my %retorno;
+        foreach  (@modulos)
+        {
+            if (/(.*)\.pm$/)
+            {
+                if ($#_ == 1)
+                {
+                    next if ($_ !~ /$_[1]/i);
+                }
+                eval
+                {
+                    require "$modulo_dir/$_";
+                    if (%retorno = &{"${1}::module_load"})
+                    {
+                        # añade la informacion del modulo
+                        print "$_ : $1 version $retorno{version} ,\n\t(c) $retorno{date} $retorno{author} <$retorno{mail}>\n";
+                        print "\tbajo la licencia $retorno{license}.\n";
+                        print "\n$retorno{description}\n\n" if ($#_ == 1);
+                        $contador++;
+                    }
+                };
+                print STDERR "$@\n" if ($@ );
+            }
+        }
+        print "\n < $contador > módulo/s leidos correctamente.\n\n";
+        return $contador;
+    }
+    print STDERR " ERROR: No se puede acceder a $modulo_dir para cargar los módulos\n";
+    return -1;
+}
+
+
+# Lista los contactos de la agenda
+
+sub modotexto_listar_agenda
+{
+    my $fichero = $_[0];
+    my %lista;
+
+    return (-1) if (leer_agenda ($fichero, \%lista) == -1);
+    my @orden = grep (!/(\d{9})/, keys (%lista));
+    @orden = sort @orden;
+    print "\n";
+    if ($#_ == 1)
+    {
+        my $patron = $_[1];
+
+        my @posiciones;
+        my $posicion = 0;
+
+        grep {
+            @posiciones = (@posiciones, $posicion) if (/$patron/i);
+            $posicion++;
+        } @orden;
+
+        my @orden_aux = @orden;
+        @orden = ();
+
+        foreach my $numero (@posiciones)
+        {
+            @orden = (@orden, $orden_aux[$numero]);
+        }
+    }
+    my $nombre;
+    my $i = 0;
+    foreach (@orden)
+    {
+        $nombre = $_." ";
+        for (my $j = length $_; $j<=50; $j++) { $nombre .= "·"; }
+        printf("%3d  %50s %u\n", ++$i, $nombre, $lista{$_});
+    }
+    print "\n";
+    return (1);
+}
+
+
+# Gestiona la forma de añadir un contacto a la agenda
+
+sub modotexto_anadir_contacto
+{
+    my $error = anadir_contacto_agenda ($_[0], $_[1]);
+    if ($error == -1)
+    {
+        print STDERR "Error, imposible abrir el fichero $_[0].\n"
+    }
+    elsif ($error == 0)
+    {
+        print STDERR "Error, formato de registro no válido.\n";
+    }
+    else
+    {
+        print "Registro '$_[1]' añadido con éxito en la agenda.\n";
+    }
+    exit;
+}
+
+
+# Gestiona la forma de borrar un contacto de la agenda
+
+sub modotexto_borrar_contacto
+{
+    my $error = borrar_contacto_agenda ($_[0], $_[1]);
+    if ($error==-2)
+    {
+        print STDERR "Error, imposible crear copia del fichero $_[0].\n";
+    }
+    elsif ($error==-1)
+    {
+        print STDERR "Error, registro no válido, no tiene 9 dígitos.\n";
+    }
+    elsif ($error==0)
+    {
+        print STDERR "Error, registro no encontrado en la agenda.\n";
+    }
+    else
+    {
+        print "Registro $_[1] borrado con éxito.\n";
+    }
+    exit;
+}
+
+
+
+###############################################################################
+#                                                                             #
+# Funciones que son necesarias para la GUI del programa                       #
+# No son necesarias para nada en modo texto.                                  #
+#                                                                             #
+###############################################################################
+
+# Funcion que crea toda la GUI del programa
+
+sub gtk_toplevel
+{
+    my $configuracion_fichero = shift;
+
+
+    set_locale Gtk;
+
+    my %datos;
+    my $clist;
+    my %configuracion_dinamica;
+    my $optionmenu_pasarela;
+    my @module_list;
+    my %configuracion_modulo;
+    my $text_acerca;
+
+    my $dir_modulos = $$configuracion_fichero{'moduledir'};
+    my $fichero_agenda = $$configuracion_fichero{'addressbookfile'};
+    my $modulo_defecto = $$configuracion_fichero{'server'};
+
+    # Propiedades de la ventana
+    my $window = new Gtk::Window ('toplevel');
+    $window->set_usize (550, 385);
+    $window->set_policy (FALSE, TRUE, TRUE);
+    $window->signal_connect ('destroy', sub { Gtk->exit( 0 ); });
+    my $prg = $0;
+    $prg =~ s#^.*/##;
+    $window->set_title ($prg);
+    $window->border_width (5);
+
+    # crear un "contenedor caja" y dentro de este una tabla donde
+    # va el frame sms y ...
+    my $main_vbox = new Gtk::VBox (FALSE, 0);
+    $window->add ($main_vbox);
+
+    my $table_sup = new Gtk::Table (1, 2, TRUE);
+    $table_sup->set_col_spacings (8);
+    $table_sup->set_row_spacings (0);
+    $main_vbox->pack_start ($table_sup, TRUE, TRUE, 0);
+
+    # Barra de estado
+    my $vbox_barra_estado = new Gtk::VBox (FALSE, 10);
+    $vbox_barra_estado->border_width (0);
+    $main_vbox->pack_start ($vbox_barra_estado, FALSE, TRUE, 0);
+
+    my $statusbar = new Gtk::Statusbar ();
+    my $context_id = $statusbar->get_context_id ("Barra de estado");
+    $vbox_barra_estado->pack_start ($statusbar, TRUE, TRUE, 0);
+
+    # Frame sms y sus componentes
+    my $frame_sms = new Gtk::Frame ("Sms : " );
+    $table_sup->attach_defaults ($frame_sms, 1, 2, 0, 1);
+
+    my $hbox_sms = new Gtk::HBox (FALSE, 0);
+    $hbox_sms->border_width (10);
+    $frame_sms->add ($hbox_sms);
+
+    # Tabla donde van posicionados todos los componentes del frame sms
+    my $table_sms = new Gtk::Table (16, 10, TRUE);
+    $table_sms->set_col_spacings (5);
+    $table_sms->set_row_spacings (0);
+    $hbox_sms->pack_start ($table_sms, TRUE, TRUE, 0);
+
+    # Crear todos los componentes del frame sms
+    my $label_pasarela = new Gtk::Label ("Pasarela :");
+    my $label_infopasarela = new Gtk::Label ("no definida");
+    my $hbox_destino = new Gtk::HBox (FALSE, 0);
+    my $label_espacio = new Gtk::HBox (FALSE, 0);
+    my $hbox_pasarela = new Gtk::HBox (FALSE, 0);
+    my $hseparator0 = new Gtk::HSeparator ();
+    my $label_destino = new Gtk::Label ("Destino/s :");
+    my $entry_destino = new Gtk::Entry (200);
+    my $hseparator1 = new Gtk::HSeparator ();
+    my $text = new Gtk::Text (undef, undef);
+    my $vscrollbar_text = new Gtk::VScrollbar ($text->vadj);
+    my $label_longitud = new Gtk::Label ("Número caracteres :");
+    my $entry_longitud = new Gtk::Entry ();
+    my $hseparator2 = new Gtk::HSeparator ();
+    my $button_enviar = new Gtk::Button ("Enviar");
+    my $button_limpiar = new Gtk::Button ("Limpiar");
+    my $button_nuevo = new Gtk::Button ("Nuevo sms");
+
+    # Posicionar todos los componentes del frame sms  y controlar eventos
+    $hbox_pasarela->pack_start ($label_pasarela, FALSE, FALSE, 0);
+    $hbox_pasarela->pack_start ($label_infopasarela, TRUE, TRUE, 0);
+    $table_sms->attach_defaults ($hbox_pasarela, 0, 10, 0, 1);
+
+    $hbox_destino->pack_start ($label_destino, FALSE, FALSE, 0);
+    $hbox_destino->pack_start ($label_espacio, TRUE, TRUE, 0);
+    $table_sms->attach_defaults ($hbox_destino, 0, 10, 2, 3);
+
+    $table_sms->attach_defaults ($hseparator0, 0, 10, 1, 2);
+    $table_sms->attach_defaults ($entry_destino, 0, 10, 3, 4);
+
+    $entry_destino->signal_connect('focus_in_event', sub { $statusbar->push ($context_id, " Numero o numeros de telefono que van a recibir el mensaje"); 1; });
+    $entry_destino->signal_connect('focus_out_event', sub { $statusbar->pop($context_id); 1; });
+    $entry_destino->signal_connect('changed', \&seleccionar_seleccion_agenda, \$clist, \%datos);
+
+    $table_sms->attach($hseparator1, 0, 10, 4, 5, [ 'expand', 'shrink', 'fill' ], [ ], 0, 0 );
+
+    $table_sms->attach_defaults ($text, 0, 9, 5, 12);
+    $text->set_editable (TRUE);
+    $text->set_word_wrap (TRUE);
+
+    $text->signal_connect ('changed', \&control_caracteres, $entry_longitud, \%configuracion_dinamica, \%configuracion_modulo);
+
+    $text->signal_connect ('focus_in_event', sub { $statusbar->push($context_id, " Texto del mensaje a enviar"); 1; });
+    $text->signal_connect ('focus_out_event', sub { $statusbar->pop($context_id); 1; });
+
+    $table_sms->attach ($vscrollbar_text, 9, 10, 5, 13, 'fill', [ 'expand', 'shrink', 'fill' ], 0, 0 );
+
+    $table_sms->set_row_spacing (11,3);
+    $table_sms->attach_defaults ($label_longitud, 0, 5, 12, 13);
+
+    $table_sms->attach_defaults ($entry_longitud, 5, 9, 12, 13);
+    $entry_longitud->set_editable (FALSE);
+    $entry_longitud->set_text ('  0  [Pos 0]');
+
+    $table_sms->attach_defaults ($hseparator2, 0, 10, 13, 14);
+
+    $table_sms->attach_defaults ($button_enviar, 0, 5, 14, 16);
+    $button_enviar->signal_connect ('clicked', \&click_enviar_sms, $statusbar, $context_id, $text, $entry_destino, \%configuracion_modulo, \%configuracion_dinamica, \%datos);
+    $button_enviar->signal_connect ('enter', sub { $statusbar->push($context_id, " Enviar mensaje a destinatario/s"); 1; });
+    $button_enviar->signal_connect ('leave', sub { $statusbar->pop($context_id); 1; });
+
+    $table_sms->attach_defaults ($button_limpiar, 6, 10, 14, 15);
+    $button_limpiar->signal_connect ('clicked', \&borrar_texto, $text, $entry_longitud);
+    $button_limpiar->signal_connect ('enter', sub { $statusbar->push($context_id, " Borrar texto del mensaje"); 1; });
+    $button_limpiar->signal_connect ('leave', sub { $statusbar->pop($context_id); 1; });
+
+    $table_sms->set_row_spacing (14,2);
+    $table_sms->attach_defaults ($button_nuevo, 6, 10, 15, 16);
+    $button_nuevo->signal_connect ('enter', sub { $statusbar->push($context_id, " Nuevo mensaje (borra mensaje y destinatarios)"); 1; });
+    $button_nuevo->signal_connect ('leave', sub { $statusbar->pop($context_id); 1; });
+    $button_nuevo->signal_connect ('clicked',
+                   sub {
+                       borrar_texto($button_nuevo, $text, $entry_longitud);
+                       $entry_destino->set_text('');
+                       if (defined $clist)
+                       {
+                           my $i=0;
+                           foreach (keys %datos)
+                           {
+                               $clist->set_background($i++,COLOR_BLANCO);
+                           }
+                       }
+                       return 1;
+                   });
+    # Pestañas
+    my $notebook = new Gtk::Notebook ();
+    $notebook->set_tab_pos ('top');
+    $notebook->set_homogeneous_tabs (TRUE);
+    $notebook->set_show_border (TRUE);
+    $table_sup->attach_defaults ($notebook, 0, 1, 0, 1);
+
+    $statusbar->push($context_id, " Espera! Todavia no estoy listo ...");
+
+    crear_pestana_agenda ($notebook, $statusbar, $context_id, $fichero_agenda, $entry_destino, \$clist, \%datos);
+    crear_pestana_configuracion ($notebook, $statusbar, $context_id, \$optionmenu_pasarela, \%configuracion_dinamica);
+    crear_pestana_ayuda ($notebook, $statusbar, $context_id, \$text_acerca);
+
+    # Buscar los modulos y cargar su informacion
+    precargar_modulos ($dir_modulos, \@module_list, $statusbar, $context_id, $text_acerca);
+    anadir_modulos ($dir_modulos, \@module_list, $statusbar, $context_id, $optionmenu_pasarela, \%configuracion_modulo, $configuracion_fichero, \%configuracion_dinamica, $label_infopasarela);
+
+
+    if (defined $$configuracion_fichero{'server'})
+    {
+        # Carga modulo por defecto
+        cargar_modulo ($dir_modulos, $modulo_defecto, $configuracion_fichero, \%configuracion_dinamica, $statusbar, $context_id, \%configuracion_modulo, $label_infopasarela);
+
+        my $contador=0;
+        foreach (@module_list)
+        {
+            last if ($_ eq $modulo_defecto);
+            $contador++;
+        }
+        $optionmenu_pasarela->set_history ($contador);
+    }
+
+    # Poner la fuente
+    $text->insert (Gtk::Gdk::Font->load (SMS_FONT), COLOR_AZUL, undef, " " );
+    $text->backward_delete(1);
+
+    # Carga los datos iniciales de la agenda
+    cargar_clist_agenda (\$clist, $fichero_agenda, \%datos, $statusbar, $context_id);
+
+    # Poner los argumentos pasados al programa
+    $entry_destino->set_text (join (", ", @ARGV)) if ($#ARGV>=0);
+
+    # mostrar todo
+    $window->show_all ();
+
+    main Gtk;
+    exit(0);
+}
+
+
+
+# Crea la pestaña agenda
+
+sub crear_pestana_agenda
+{
+    my $notebook = shift;
+    my $statusbar = shift;
+    my $context_id = shift;
+    my $fichero = shift;
+    my $entry_destino = shift;
+    my $clist = shift;
+    my $datos = shift; # referencia a un hash
+
+
+    my $label_agenda = new Gtk::Label ("Agenda");
+    my $vbox_agenda = new Gtk::VBox (FALSE, 5);
+    $notebook->append_page ($vbox_agenda, $label_agenda);
+
+    my $entry_nombre = new Gtk::Entry ();
+    my $entry_telefono = new Gtk::Entry (9);
+    $entry_nombre->set_text ('nombre (alias)');
+    $entry_telefono->set_text ('teléfono');
+
+    my $button_anadir = new Gtk::Button ("Añadir");
+    my $button_borrar = new Gtk::Button ("Borrar");
+
+    my $table_agen_inferior = new Gtk::Table (2, 6, TRUE);
+    $table_agen_inferior->set_col_spacings (8);
+    $table_agen_inferior->set_row_spacings (10);
+    $table_agen_inferior->attach_defaults ($entry_nombre, 0, 4, 0, 1);
+    $table_agen_inferior->attach_defaults ($entry_telefono, 4, 6, 0, 1);
+    $table_agen_inferior->attach_defaults ($button_anadir, 0, 3, 1, 2);
+    $table_agen_inferior->attach_defaults ($button_borrar, 3, 6, 1, 2);
+
+    my $scrolled_window = new Gtk::ScrolledWindow (undef, undef);
+    my $hbox_agenda = new Gtk::HBox (FALSE, 0);
+    $vbox_agenda->border_width (5);
+    $vbox_agenda->pack_start ($scrolled_window, TRUE, TRUE, 0);
+    $vbox_agenda->pack_start ($hbox_agenda, FALSE, TRUE, 0);
+    $hbox_agenda->pack_start ($table_agen_inferior, TRUE, TRUE, 0);
+
+    # Crear el objecto $clist, previamente definido
+    my @titulos = ("Nombre", "Teléfono");
+    $$clist = new_with_titles Gtk::CList (@titulos);
+    $scrolled_window->set_policy ('automatic', 'always');
+    $$clist->set_shadow_type ('in');
+    $$clist->set_selection_mode ('extended');
+    $$clist->column_titles_passive ();
+    $$clist->set_column_width (0, 150);
+    $scrolled_window->add ($$clist);
+
+    # Control de señales
+    $$clist->signal_connect ('select_row', \&aceptar_seleccion_agenda, $datos, $entry_destino);
+    $$clist->signal_connect ('focus_out_event', \&limpiar_seleccion_agenda, $datos);
+
+    $button_anadir->signal_connect ('clicked', \&click_anadir_contacto_agenda, $datos, $clist, $fichero, $entry_nombre, $entry_telefono, $statusbar, $context_id);
+    $button_anadir->signal_connect ('enter', sub { $statusbar->push ($context_id, " Añade un registro a su agenda con los valores de los campos 'nombre' y 'teléfono'"); 1; });
+    $button_anadir->signal_connect ('leave', sub { $statusbar->pop ($context_id); 1; });
+
+    $button_borrar->signal_connect ('clicked', \&click_borrar_contacto_agenda, $datos, $clist, $fichero, $entry_nombre, $entry_telefono, $statusbar, $context_id, $entry_destino);
+    $button_borrar->signal_connect ('enter', sub { $statusbar->push ($context_id, " Borra el registro de su agenda que coincida con el valor del campo 'teléfono'"); 1; });
+    $button_borrar->signal_connect ('leave', sub { $statusbar->pop ($context_id); 1; });
+
+    $entry_nombre->signal_connect ('focus_out_event', sub { $statusbar->pop ($context_id); 1; });
+    $entry_nombre->signal_connect ('focus_in_event',
+                                   sub {
+                                       my $entrada = $entry_nombre->get_text ();
+                                       if ($entrada =~ /nombre \(alias\)/)
+                                       {
+                                           $entry_nombre->delete_text (0,-1);
+                                       }
+                                       $statusbar->push ($context_id, " Nombre del contacto a añadir, para crear un alias se pone entre paréntesis");
+                                       return 1;
+                                   } );
+
+    $entry_telefono->signal_connect ('focus_out_event', sub { $statusbar->pop ($context_id); 1; });
+    $entry_telefono->signal_connect ('focus_in_event',
+                                     sub {
+                                         my $entrada = $entry_telefono->get_text ();
+                                         if ($entrada =~ /teléfono/)
+                                         {
+                                             $entry_telefono->delete_text (0,-1);
+                                         }
+                                         $statusbar->push ($context_id, " Teléfono del contacto a añadir o borrar");
+                                         return 1;
+                                     } );
+    return 1;
+}
+
+
+# Crea la pestaña configuracion
+
+sub crear_pestana_configuracion
+{
+    my $notebook = shift;
+    my $statusbar = shift;
+    my $context_id = shift;
+    my $optionmenu_pasarela = shift;
+    my $configuracion_dinamica = shift;
+
+
+    my $label_configuracion = new Gtk::Label ("Configuracion");
+    my $vbox_configuracion = new Gtk::VBox (FALSE, 10);
+    $vbox_configuracion->set_border_width(10);
+    $notebook->append_page ($vbox_configuracion, $label_configuracion);
+
+    my $hbox_pasarela = new Gtk::HBox (FALSE, 0);
+    my $label_pasarela = new Gtk::Label ("Pasarela :");
+
+    $$optionmenu_pasarela = new Gtk::OptionMenu ();
+    my $menu_pasarela = new Gtk::Menu ();
+
+    $$optionmenu_pasarela->set_menu ($menu_pasarela);
+
+    $hbox_pasarela->pack_start ($label_pasarela, FALSE, TRUE, 10);
+    $hbox_pasarela->pack_start ($$optionmenu_pasarela, TRUE, TRUE, 10);
+    $vbox_configuracion->pack_start ($hbox_pasarela, TRUE, TRUE, 0);
+
+    my $label_login = new Gtk::Label("Login :");
+    my $entry_login = new Gtk::Entry(100);
+    my $label_pass = new Gtk::Label("Password :");
+    my $entry_pass = new Gtk::Entry(100);
+    my $label_mail = new Gtk::Label("E-Mail :");
+    my $entry_mail = new Gtk::Entry(100);
+
+    $$configuracion_dinamica{'login'} = $entry_login;
+    $$configuracion_dinamica{'password'} = $entry_pass;
+    $$configuracion_dinamica{'mail'} = $entry_mail;
+
+    my $table_login = new Gtk::Table(2, 3, FALSE);
+    $table_login->set_col_spacings(0);
+    $table_login->set_row_spacings(5);
+    $vbox_configuracion->pack_start($table_login, TRUE, TRUE, 0);
+    $table_login->attach_defaults($label_login, 0, 1, 0, 1);
+    $table_login->attach_defaults($entry_login, 1, 2, 0, 1);
+    $table_login->attach_defaults($label_pass, 0, 1, 1, 2);
+    $table_login->attach_defaults($entry_pass, 1, 2, 1, 2);
+    $table_login->attach_defaults($label_mail, 0, 1, 2, 3);
+    $table_login->attach_defaults($entry_mail, 1, 2, 2, 3);
+
+    my $frame_opciones = new Gtk::Frame( "Opciones : " );
+    my $hbox_opciones = new Gtk::HBox (FALSE, 0);
+    $frame_opciones->add ($hbox_opciones);
+    my $vbox_opciones = new Gtk::VBox (FALSE, 0);
+    $vbox_opciones->set_border_width (5);
+
+    my $checkbutton_anonimo = new Gtk::CheckButton("Mensaje anonimo");
+    my $checkbutton_confirmar = new Gtk::CheckButton("Confirmar recepcion");
+    my $checkbutton_smslargos = new Gtk::CheckButton("Mensajes largos");
+
+    $$configuracion_dinamica{'anonymoussms'} = $checkbutton_anonimo;
+    $$configuracion_dinamica{'confirmsms'} = $checkbutton_confirmar;
+    $$configuracion_dinamica{'longsms'} = $checkbutton_smslargos ;
+
+    $hbox_opciones->pack_start($vbox_opciones, TRUE, TRUE, 10);
+    $vbox_opciones->pack_start ($checkbutton_anonimo, TRUE, TRUE, 0);
+    $vbox_opciones->pack_start ($checkbutton_confirmar, TRUE, TRUE, 0);
+    $vbox_opciones->pack_start ($checkbutton_smslargos, TRUE, TRUE, 0);
+
+    $vbox_configuracion->pack_start($frame_opciones, TRUE, TRUE, 0);
+
+    my $frame_conf_agenda = new Gtk::Frame( "Agenda : " );
+    my $hbox_conf_agenda = new Gtk::HBox(FALSE, 0);
+    $hbox_conf_agenda->set_border_width (5);
+    $frame_conf_agenda->add($hbox_conf_agenda);
+
+    my $checkbutton_agendalocal = new Gtk::CheckButton("Agenda local");
+    my $checkbutton_agendaremota = new Gtk::CheckButton("Agenda remota");
+
+    $$configuracion_dinamica{'localaddressbook'} = $checkbutton_agendalocal;
+    $$configuracion_dinamica{'remoteaddressbook'} = $checkbutton_agendaremota;
+
+    $hbox_conf_agenda->pack_start($checkbutton_agendalocal, TRUE, TRUE, 0);
+    $hbox_conf_agenda->pack_start($checkbutton_agendaremota, TRUE, TRUE, 0);
+
+    $vbox_configuracion->pack_start($frame_conf_agenda, TRUE, TRUE, 0);
+
+    return TRUE;
+}
+
+
+# Esta funcion crea la pestaña 'acerca de'
+
+sub crear_pestana_ayuda
+{
+    my $notebook = shift;
+    my $statusbar = shift;
+    my $context_id = shift;
+    my $text_acerca = shift;
+
+
+    my $label_acerca = new Gtk::Label ("Acerca de");
+    my $hbox_acerca = new Gtk::HBox (FALSE, 5);
+    $hbox_acerca->set_border_width(5);
+    $notebook->append_page ($hbox_acerca, $label_acerca);
+
+    $$text_acerca = new Gtk::Text (undef, undef);
+    $$text_acerca->set_editable (FALSE);
+    $$text_acerca->set_line_wrap (TRUE);
+    $$text_acerca->set_word_wrap (TRUE);
+    
+    $$text_acerca->freeze ();    
+    $$text_acerca->insert (Gtk::Gdk::Font->load (SMS_FONT), COLOR_AZUL, undef, "\n\t$globalconf{programa} version $globalconf{version}\n");
+    $$text_acerca->insert (undef, undef, undef, "\n$globalconf{descripcion}\n");
+    $$text_acerca->insert (undef, undef, undef, version_programa());
+    $$text_acerca->thaw ();
+    
+    $hbox_acerca->pack_start  ($$text_acerca, TRUE, TRUE, 0);
+
+    my $vscrollbar = new Gtk::VScrollbar ($$text_acerca->vadj);
+    $hbox_acerca->pack_start  ($vscrollbar ,FALSE , FALSE, 0);
+}
+
+
+# Esta funcion se ejecuta cada vez que se escribe un caracter en
+# el widget texto del sms, controla el numero de caracteres
+# escritos y otras cosas
+
+sub control_caracteres
+{
+    my $text = shift;
+    my $entry_longitud = shift;
+    my $configuracion_actual = shift;
+    my $configuracion_modulo = shift;
+
+
+    my $caracteres_sms = $text->get_length();
+    my $caracteres_limite = $$configuracion_modulo{'length'};
+    my $posicion = $text->get_point();
+    
+    
+    if ( (!($$configuracion_actual{'longsms'}->get_active())) && (defined $caracteres_limite))
+    {
+        # Aqui hay un bug!, corrigelo anda ...
+        my $letra = $text->get_chars($posicion-1, $posicion);
+        $text->backward_delete(1);
+        my $cal = (int ($posicion / $caracteres_limite))%2;
+        if ($cal == 0)
+        {
+            $text->insert (Gtk::Gdk::Font->load (SMS_FONT), COLOR_AZUL, undef, $letra);
+        }
+        else
+        {
+            $text->insert (Gtk::Gdk::Font->load (SMS_FONT), COLOR_NEGRO, undef, $letra);
+        }
+    }
+    if ($caracteres_sms > 99)
+    {
+        $entry_longitud->set_text (" $caracteres_sms  [Pos ".$posicion."]");
+        return 1;
+    }
+    $entry_longitud->set_text ("  $caracteres_sms  [Pos ".$posicion."]");
+    return 1;
+}
+
+
+# Borra el contenido de los widgets
+
+sub borrar_texto
+{
+    my ( $widget, $text, $entry_longitud ) = @_;
+
+    $text->set_point(0);
+    $text->forward_delete($text->get_length());
+    $text->insert (Gtk::Gdk::Font->load (SMS_FONT), COLOR_AZUL, undef, " " );
+    $text->backward_delete(1);
+    $entry_longitud->set_text('  0  [Pos 0]');
+}
+
+
+# Funcion que se ejecuta cuando se presiona el boton 'enviar' sms
+# Valida todos los campos necesarios por el modulo elegido, trocea
+# el sms si es necesario y por ultimo llama a la funcion del modulo
+
+sub click_enviar_sms
+{
+    my $widget = shift;
+    my $statusbar = shift;
+    my $context_id = shift;
+    my $text = shift;
+    my $entry_destino = shift;
+    my $configuracion_modulo = shift;
+    my $configuracion_widgets = shift;
+    my $datos = shift;
+
+
+    my @destinos = split (/\s*,{1,}\s*,{0,}\s*/, $entry_destino->get_chars (0, -1));
+    my $sms = $text->get_chars (0, -1);
+    my @telefonos;
+    my %configuracion_dinamica_modulo;
+    
+    
+    if (!exists $$configuracion_modulo{'module'})
+    {
+        $statusbar->pop ($context_id);
+        $statusbar->push ($context_id, " ERROR: Módulo no definido");
+        while(Gtk->events_pending()) { Gtk->main_iteration(); }
+        sleep 2;
+        return 1;
+    }
+
+    my $error = validar_datos_envio ($sms, \@destinos, $configuracion_widgets, $datos, \@telefonos, \%configuracion_dinamica_modulo);
+
+    if ($error eq 'ok')
+    {
+        # Se divide, si es necesario, el sms en trozos de caracteres y se añaden
+        # a cada trozo los carateres de siguiente y  precedencia
+        my @trozos;
+        my $retorno;
+        my $modulo = $$configuracion_modulo{'module'};
+
+        if (($$configuracion_widgets{'longsms'}->is_sensitive()) && ($configuracion_dinamica_modulo{'longsms'} eq 'off'))
+        {
+            @trozos = partir_mensaje ($sms, $$configuracion_modulo{'length'});
+        }
+        else
+        {
+            push (@trozos, $sms);
+        }
+
+        foreach my $mensaje (@trozos)
+        {
+            # Llama a la funcion module_send_sms (con los parametros) del modulo seleccionado
+            # y reporta los errores si es que existen
+
+            eval {
+                $retorno = &{"${modulo}::module_send_sms" } ($mensaje, \@telefonos, \%configuracion_dinamica_modulo, $statusbar, $context_id);
+            };
+            if ($@ )
+            {
+                print STDERR "Error en "."$modulo"."::module_send_sms (no definida o con parametros incorrectos)\n";
+                $statusbar->pop ($context_id);
+                $statusbar->push ($context_id, " ERROR: Módulo '$modulo' no reconocido o incompleto");
+                while(Gtk->events_pending()) { Gtk->main_iteration(); }
+                sleep 2;
+                return 1;
+            }
+            last if ($retorno < 0);
+        }
+        if ($retorno == -1)
+        {
+            $statusbar->pop($context_id);
+            $statusbar->push($context_id, " ERROR: Mensaje/s no enviados");
+            while(Gtk->events_pending()) { Gtk->main_iteration(); }
+            sleep 2;
+        }
+        elsif ($retorno == 1)
+        {
+            $statusbar->pop($context_id);
+            $statusbar->push($context_id, " OK: Mensaje/s enviado correctamente");
+            while(Gtk->events_pending()) { Gtk->main_iteration(); }
+            sleep 1;
+        }
+        return 1;
+    }
+    $statusbar->pop ($context_id);
+    $statusbar->push ($context_id, $error);
+    while(Gtk->events_pending()) { Gtk->main_iteration(); }
+    sleep 2;
+
+    return 1;
+}
+
+
+# Funcion que controla si todos los datos que necesita el modulo
+# son coherentes, si existen errores
+
+sub validar_datos_envio
+{
+    my $texto = shift;
+    my $destino = shift;
+    my $configuracion_widgets = shift;
+    my $agenda = shift;
+    my $telefono = shift;
+    my $configuracion_dinamica_modulo = shift;
+
+
+    my $error;
+
+    if (length ($texto) < 1)
+    {
+        $error=" ERROR: ¿¡ Mensaje en blanco !?";
+        return $error;
+    }
+
+    my $clave;
+    foreach $clave (keys %$configuracion_widgets)
+    {
+        if ($$configuracion_widgets{$clave}->is_sensitive ())
+        {
+            # Busca los widgets entry que deben estar completos
+            if (($clave eq 'login') || ($clave eq 'password'))
+            {
+                my $contenido = $$configuracion_widgets{$clave}->get_text ();
+                if ((length $contenido) < 4)
+                {
+                    $error=" ERROR: Login y/o password no definidos o con formato incorrecto";
+                    return $error;
+                }
+                $$configuracion_dinamica_modulo{$clave}=$contenido;
+            }
+            elsif ($clave eq 'mail')
+            {
+                my $email = $$configuracion_widgets{$clave}->get_text ();
+                if (!($email =~ /\w+\@+\w+/))
+                {
+                    $error=" ERROR: Mail con formato incorrecto o no definido";
+                    return $error;
+                }
+                $$configuracion_dinamica_modulo{$clave}=$email;
+            }
+            else
+            {
+                if ($$configuracion_widgets{$clave}->get_active ())
+                {
+                    $$configuracion_dinamica_modulo{$clave}='on';
+                }
+                else
+                {
+                    $$configuracion_dinamica_modulo{$clave}='off';
+                }
+            }
+        }
+    }
+    return validar_destinos ($agenda, $destino, $telefono);
+}
+
+
+# Deselecciona todos los contactos seleccionados
+
+sub limpiar_seleccion_agenda
+{
+    my ($clist, @data) = @_;
+
+    my $datos = shift (@data);
+
+
+    my $limite = (scalar (keys %$datos))/2;
+
+    for (my $i=0; $i<$limite; $i++)
+    {
+        $clist->unselect_row ($i,0);
+        $clist->unselect_row ($i,1);
+    }
+    return 1;
+}
+
+
+# Funcion que se ejecuta cuando se pulsa el boton de borrar
+# un registro a la agenda
+
+sub click_borrar_contacto_agenda
+{
+    my ($button, @data) = @_;
+
+    my $entry_destino = pop (@data);
+    my $context_id = pop (@data);
+    my $statusbar = pop (@data);
+    my $entry_telefono = pop (@data);
+    my $entry_nombre = pop (@data);
+    my $fichero = pop (@data);
+    my $clist = pop (@data);
+    my $datos = pop (@data);
+
+
+    my $registro = $entry_telefono->get_text ();
+    my $registro_aux = $$datos{$registro};
+    my $valor_retorno = borrar_contacto_agenda ($fichero, $registro);
+
+    if ($valor_retorno == 0)
+    {
+        $statusbar->pop ($context_id);
+        $statusbar->push ($context_id, " ERROR: No se ha encotrado un registro que coincida con '$registro'");
+        while(Gtk->events_pending()) { Gtk->main_iteration(); }
+        sleep 2;
+    }
+    elsif ($valor_retorno == -1)
+    {
+        $statusbar->pop ($context_id);
+        $statusbar->push ($context_id, " OJO: '$registro' no es un formato de búsqueda válido");
+    }
+    elsif ($valor_retorno == -2)
+    {
+        $statusbar->pop ($context_id);
+        $statusbar->push ($context_id, " ERROR: No se puede leer y/o escribir el fichero de agenda");
+        while(Gtk->events_pending()) { Gtk->main_iteration(); }
+        sleep 2;
+    }
+    else
+    {
+        if (cargar_clist_agenda ($clist, $fichero, $datos, $statusbar, $context_id) == 1)
+        {
+            # Si el registro a borrar esta en el 'entry' destino lo borra
+
+            my $seleccionados = $entry_destino->get_text ();
+            if ($seleccionados =~ /$registro_aux/)
+            {
+                $seleccionados =~ s/(,\s*$registro_aux\s*)|(\s*$registro_aux\s*,\s+)|(\s*$registro_aux\s*)//g;
+                $entry_destino->set_text ($seleccionados);
+            }
+            $statusbar->pop ($context_id);
+            $statusbar->push ($context_id, " Contacto borrado de su agenda");
+            $entry_nombre->set_text ("nombre (alias)");
+            $entry_telefono->set_text ("teléfono");
+            seleccionar_seleccion_agenda ($entry_destino, $clist, $datos);
+        }
+    }
+    return 1;
+}
+
+
+# Funcion que se ejecuta cuando se pulsa el boton de añadir un
+# nuevo contacto a la agenda.
+
+sub click_anadir_contacto_agenda
+{
+    my ($button, @data) = @_;
+
+    my $context_id = pop (@data);
+    my $statusbar = pop (@data);
+    my $entry_telefono = pop (@data);
+    my $entry_nombre = pop (@data);
+    my $fichero = pop (@data);
+    my $clist = pop (@data);
+    my $datos = pop (@data);
+
+
+    my $registro = join ("=", ($entry_nombre->get_text (), $entry_telefono->get_text () ));
+    my $valor_retorno = anadir_contacto_agenda ($fichero, $registro);
+
+    if ($valor_retorno == 0)
+    {
+        $statusbar->pop ($context_id);
+        $statusbar->push ($context_id, " ERROR: Registro con formato no válido, revise el campo nombre y/o teléfono");
+        while(Gtk->events_pending()) { Gtk->main_iteration(); }
+        sleep 2;
+    }
+    elsif ($valor_retorno == -1)
+    {
+        $statusbar->pop ($context_id);
+        $statusbar->push ($context_id, " ERROR: No se puede leer y/o escribir el fichero de agenda");
+        while(Gtk->events_pending()) { Gtk->main_iteration(); }
+        sleep 2;
+    }
+    else
+    {
+        if (cargar_clist_agenda ($clist, $fichero, $datos, $statusbar, $context_id) == 1)
+        {
+            $statusbar->pop ($context_id);
+            $statusbar->push ($context_id, " Contacto añadido correctamente a su agenda");
+            $entry_nombre->set_text ("nombre (alias)");
+            $entry_telefono->set_text ("teléfono");
+        }
+    }
+    return 1;
+}
+
+
+# Borra el contenido de la pestaña agenda y carga de nuevo los 
+# datos del fichero
+
+sub cargar_clist_agenda
+{
+    my $clist = shift;
+    my $fichero = shift;
+    my $datos = shift;
+    my $statusbar = shift;
+    my $context_id = shift;
+
+    my @nombres;
+    my $clave;
+
+
+    # Se vacian los posibles datos de las estructuras
+    %$datos = ();
+    $$clist->clear();
+
+    # Se lee de nuevo la agenda
+    if (leer_agenda ($fichero, $datos) == -1)
+    {
+        $statusbar->pop ($context_id);
+        $statusbar->push ($context_id, " ERROR: No se puede leer fichero de agenda");
+        return 0;
+    }
+    @nombres = grep (!/(\d{9})/, keys (%$datos));
+    @nombres = sort @nombres;
+
+    foreach (@nombres)
+    {
+        $$clist->append ($_, $$datos{$_});
+    }
+    $$clist->thaw ();
+
+    return 1;
+}
+
+
+# Selecciona automaticamente todos los contactos de la agenda que estan
+# en el entry destino
+
+sub seleccionar_seleccion_agenda
+{
+    my $entry_destino = shift;
+    my $clist = shift;
+    my $datos = shift;
+
+    my $columna;
+    my $registro;
+
+
+    my $seleccionados = $entry_destino->get_text ();
+    my $limite = (scalar (keys %$datos))/2;
+
+    for (my $fila=0; $fila<$limite; $fila++)
+    {
+        $$clist->set_background($fila,COLOR_BLANCO);
+    }
+
+    my @array=split(/\s*,{1,}\s*,{0,}\s*/,$seleccionados);
+    my $dato;
+    my $contador = 0;
+
+    foreach (@array)
+    {
+        #$dato = quotemeta $_;
+        next if ($_ =~ /[\(\)\[\]\\\$\|\^\+\*\?\}\{\.]/);
+        $dato = $_;
+
+        for (my $fila=0; $fila<$limite; $fila++)
+        {
+            for ($columna=0; $columna<2; $columna++)
+            {
+                $registro = $$clist->get_text ($fila, $columna);
+                if (($dato eq $registro) || ($registro =~ /.*\(\s*$dato\s*\).*/))
+                {
+                    $$clist->set_background ($fila, COLOR_VERDE);
+                    last;
+                }
+                if (($registro =~ /$dato/))
+                {
+                    $$clist->set_background ($fila, COLOR_CYAN);
+                    last;
+                }
+            }
+        }
+        $contador++;
+    }
+    return 1;
+}
+
+
+# Carga el modulo seleccionado en memoria, para poder
+#·acceder a sus funciones
+
+sub cargar_modulo
+{
+    my $modulo_dir = shift;
+    my $modulo = shift;
+    my $configuracion_agenda = shift;
+    my $configuracion_widgets = shift;
+    my $statusbar = shift;
+    my $context_id = shift;
+    my $configuracion_modulo = shift;
+    my $label = shift;
+
+    my %retorno;
+    my %info;
+    my $error = 0;
+
+
+    # Llama a la funcion module_init (con los parametros) del modulo seleccionado
+    # y reporta los errores si es que existen
+    eval {
+        require "$modulo_dir/$modulo.pm";
+        &{"${modulo}::module_init" } (\%retorno, \%info);
+    };
+    if (($@ ) || (!exists ($info{'length'})) || (!exists ($info{'name'})))
+    {
+        print STDERR "Error cargando "."$modulo"."\n";
+        print STDERR "Modulo no cargado.\n";
+        $statusbar->pop ($context_id);
+        $statusbar->push ($context_id, " ERROR: Módulo '$modulo' no reconocido o incompleto. Módulo no cargado");
+        $label->set_text ("no definida");
+        $error = 1;
+    }
+
+    foreach (keys %$configuracion_widgets)
+    {
+        if ($error == 1)
+        {
+            $$configuracion_widgets{$_}->set_sensitive (FALSE);
+            next;
+        }
+        if (exists $retorno{$_})
+        {
+            if ($retorno{$_} =~ /enabled/)
+            {
+                $$configuracion_widgets{$_}->set_sensitive (TRUE);
+                next;
+            }
+        }
+        if ($_ =~ /anonymoussms|confirmsms|longsms|localaddressbook|remoteaddressbook/)
+        {
+            $$configuracion_widgets{$_}->active (FALSE);
+        }
+        else
+        {
+            $$configuracion_widgets{$_}->delete_text (0, -1);
+        }
+        $$configuracion_widgets{$_}->set_sensitive (FALSE);
+    }
+
+    return 0 if ($error);
+
+    # En la primera pasada se establece la configuracion por defecto
+    # del programa
+    my $dato;
+    foreach $dato (keys %$configuracion_agenda)
+    {
+        if ($dato !~ /:/)
+        {
+            # Controla si es un widget de la interfaz o es otro dato de
+            # configuracion del programa
+            if (exists $$configuracion_widgets{$dato})
+            {
+                if ($$configuracion_widgets{$dato}->is_sensitive())
+                {
+                    # Selecciona que widgets tienen campos de on u off, y los activa
+                    if ($dato =~ /anonymoussms|confirmsms|longsms|localaddressbook|remoteaddressbook/)
+                    {
+                        if ($$configuracion_agenda{$dato} =~ /on/)
+                        {
+                            $$configuracion_widgets{$dato}->active (TRUE);
+                        }
+                        else
+                        {
+                            $$configuracion_widgets{$dato}->active (FALSE);
+                        }
+                    }
+                    # Widgets que admiten entrada de datos, es decir no son de on/off
+                    else
+                    {
+                        $$configuracion_widgets{$dato}->set_text ($$configuracion_agenda{$dato});
+                    }
+                    next;
+                }
+            }
+            else
+            {
+                $$configuracion_modulo{$dato} = $$configuracion_agenda{$dato};
+            }
+        }
+    }
+
+    # En segunda pasada se establece la configuracion para el modulo
+    # en particular, sobreescribiendo, si es necesario, la configuracion
+    # del programa
+    my $aux;
+    foreach $dato (keys %$configuracion_agenda)
+    {
+        if ($dato =~ /(\w+)\s*:\s*$modulo/)
+        {
+            $aux = $1;
+            # Controla si es un widget de la interfaz o es otro dato de
+            # configuracion del programa
+            if (exists $$configuracion_widgets{$aux})
+            {
+                if ($$configuracion_widgets{$aux}->is_sensitive())
+                {
+                    # Selecciona que widgets tienen campos de on u off, y los activa
+                    if ($aux =~ /anonymoussms|confirmsms|longsms|localaddressbook|remoteaddressbook/)
+                    {
+                        if ($$configuracion_agenda{$dato} =~ /on/)
+                        {
+                            $$configuracion_widgets{$aux}->active (TRUE);
+                        }
+                        else
+                        {
+                            $$configuracion_widgets{$aux}->active (FALSE);
+                        }
+                    }
+                    # Widgets que admiten entrada de datos, es decir no son de on/off
+                    else
+                    {
+                        $$configuracion_widgets{$aux}->set_text ($$configuracion_agenda{$dato});
+                    }
+                    next;
+                }
+            }
+            else
+            {
+                $$configuracion_modulo{$aux} = $$configuracion_agenda{$aux};
+            }
+        }
+    }
+    $statusbar->pop ($context_id);
+    $statusbar->push ($context_id, " Listo para hacer realidad tus deseos ... ");
+    $label->set_text ("$info{'name'}  [$info{'length'} caracteres]");
+
+    while ((my $clave, my $valor) = each (%info))
+    {
+        $$configuracion_modulo{$clave} = $valor;
+    }
+    $$configuracion_modulo{'require'} = "$modulo_dir/$modulo.pm";
+    $$configuracion_modulo{'module'} = $modulo;
+
+    # refrescar los widgets
+    foreach (keys %$configuracion_widgets)
+    {
+        $$configuracion_widgets{$_}->draw (undef);
+    }
+    return 1;
+}
+
+
+# Busca todos los posibles modulos en un directorio y accede a su
+# descripcion para ser mostrada en la pestaña "acerca de"
+
+sub precargar_modulos
+{
+    my $modulo_dir = shift;
+    my $modulo_list = shift;
+    my $statusbar = shift;
+    my $context_id = shift;
+    my $text_acerca = shift;
+
+
+    if (opendir(DIR, $modulo_dir))
+    {
+        my @modulos = grep { /\.pm$/ && -r "$modulo_dir/$_" } readdir(DIR);
+        closedir DIR;
+
+        my $fuente = Gtk::Gdk::Font->load (MODULE_FONT);
+        $text_acerca->freeze ();
+        $text_acerca->insert ($fuente, COLOR_AZUL, undef, "\nMódulos leidos en : '$modulo_dir'\n\n");
+
+        my $contador=0;
+        my %retorno;
+        foreach  (@modulos)
+        {
+            if (/(.*)\.pm$/)
+            {
+                eval
+                {
+                    require "$modulo_dir/$_";
+                    if (%retorno = &{"${1}::module_load"})
+                    {
+                        # añade la informacion del modulo
+                        $text_acerca->insert ($fuente, COLOR_AZUL, undef, "$1 :\n\n");
+                        $text_acerca->insert ($fuente, $text_acerca->style->black, undef, "\t$_    version $retorno{version} ,\n");
+                        $text_acerca->insert ($fuente, $text_acerca->style->black, undef, "\t(c) $retorno{date} $retorno{author}\n\t$retorno{mail}\n");
+                        $text_acerca->insert ($fuente, $text_acerca->style->black, undef, "\tbajo la licencia $retorno{license}.\n\n");
+                        $text_acerca->insert ($fuente, $text_acerca->style->black, undef, "$retorno{description}\n\n");
+
+                        $contador++;
+                        push @$modulo_list, $1;
+                    }
+                };
+                print STDERR "$@\n" if ($@ );
+            }
+        }
+        $text_acerca->insert ($fuente, COLOR_AZUL, undef, " < $contador > módulos leidos correctamente.\n\n");
+        $text_acerca->thaw ();
+        if ($contador == 0)
+        {
+            $statusbar->pop ($context_id);
+            $statusbar->push ($context_id, " OJO: ¡$contador módulos leidos en $modulo_dir!");
+        }
+        return $contador;
+    }
+    $statusbar->pop ($context_id);
+    $statusbar->push ($context_id, " ERROR: No se puede acceder a $modulo_dir para cargar los módulos");
+    return -1;
+}
+
+
+# Añade todos los modulos encontrados al option menu, para
+# que el ususario pueda seleccionarlos
+
+sub anadir_modulos
+{
+    my $modulo_dir = shift;
+    my $modulo_list = shift;             # referencia a array
+    my $statusbar = shift;
+    my $context_id = shift;
+    my $optionmenu_pasarela = shift;
+    my $configuracion_modulo = shift;    # referencia a hash que guarda la configuracion del modulo actual
+    my $configuracion_fichero = shift;   # referencia a hash que guarda todas las opciones de configuracion del fichero
+    my $configuracion_widgets = shift;   # referencia a hash de objetos de la pestaña configuracion
+    my $label = shift;                   # objeto label que muestra informacion
+
+    my $menu_pasarela = $optionmenu_pasarela->get_menu();
+
+    foreach (@$modulo_list)
+    {
+        # añade el menu_item al menu
+
+        my $menu_item = new Gtk::MenuItem ($_);
+        $menu_pasarela->append ($menu_item);
+        $menu_item->show ();
+        $menu_item->signal_connect ('activate',
+                    sub {
+                        # If I remember correctly, when a MenuItem in the OptionMenu gets
+                        # activated, its child is reparented to the OptionMenu, so you should be
+                        # able to access it with $optionmenu->child. The child is usaually a
+                        # Gtk::Label, you may want to use $child->get() to retrieve the text.
+                        # Or you may use a closure as the 'activate' signal handler.
+
+                        # Once you have the active menu item you get the child widget with:
+                        # $child = $menuitem->child;
+                        # If the child is a Gtk::Label, you can simply use:
+                        # $text = $child->get;
+                        # to get the text in the label.
+
+                        # lupus
+                        # --
+                        # -----------------------------------------------------------------
+                        # lupus@debian.org                                     debian/rules
+                        # lupus@ximian.com                             Monkeys do it better
+
+                        my $child = $optionmenu_pasarela->child;
+
+                        cargar_modulo ($modulo_dir, $child->get, $configuracion_fichero, $configuracion_widgets, $statusbar, $context_id, $configuracion_modulo, $label);
+
+                        return 1;
+                    } );
+    }
+    return 1;
+}
+
+
+# Gestiona las selecciones que se hacen en la lista agenda (pestaña)
+
+sub aceptar_seleccion_agenda
+{
+    my ($clist, @data) = @_;
+
+    my $evento = pop (@data);
+    my $columna = pop (@data);
+    my $fila = pop (@data);
+    my $entry_destino = pop (@data);
+    my $datos = pop (@data);
+
+
+    # No se hace nada si no es doble click
+
+    return 1 if ($evento->{'type'} ne '2button_press');
+
+    my $color_verde = Gtk::Gdk::Color->parse_color ("green");
+    my $color_blanco = Gtk::Gdk::Color->parse_color ("white");
+
+    my $aux;
+    my $seleccion;
+    $aux=", " if (length ($entry_destino->get_chars (0, -1) ) >1);
+
+    if ($columna == 0)
+    {
+        # Si seleciona la columna usario se opera de la siguiente forma:
+        # - Si el destinatario esta ya seleccionado se deselecciona
+        # - Si no esta seleccionado como destinatario, se selecciona
+
+        $seleccion = $clist->get_text ($fila, $columna);
+
+        my $seleccionados = $entry_destino->get_text ();
+        my @array_seleccionados = split( /\s*,{1,}\s*,{0,}\s*/, $seleccionados);
+
+        for (my $i=0; $i<@array_seleccionados; $i++)
+        {
+            # Es un numero de telefono, significa que el usuario lo ha
+            # introducido en el "entry" destinatarios tecleandolo,
+            # con lo que el programa no controla las repeticiones, el
+            # usuario es responsable del posible sms boom.
+
+            next if ($array_seleccionados[$i] =~ /\d{9}/);
+
+
+            # Si coincide totalmente, ya esta seleccionado, se elimina
+            # la seleccion, es decir, ya no es destinatario del sms
+
+            if ($array_seleccionados[$i] =~ /$seleccion/)
+            {
+                $clist->unselect_row ($fila, $columna);
+                $clist->set_background ($fila, $color_blanco);
+                $seleccionados =~ s/(,\s*$seleccion\s*)|(\s*$seleccion\s*,\s+)|(\s*$seleccion\s*)//g;
+                $entry_destino->set_text ($seleccionados);
+
+                return 1;
+            }
+
+            # Se mira si esta seleccionado por el alias
+
+            if ($seleccion =~ /\s*(\S+)\s*\(\s*(\S+)\s*\)\s*/)
+            {
+                # Ya esta seleccionado el nombre del tio/a de la agenda,
+                # y ademas, debido a que no es su alias, significa
+                # que lo ha escrito el usuario con sus deditos, con lo
+                # que el programa no controla las repeticiones, el responsable
+                # es el usuario
+                # if ($array_seleccionados[$i] =~ /$1/)
+                # {
+                #    next
+                # }
+                if ($array_seleccionados[$i] =~ /$2/)
+                {
+                    # Es un alias del usario, como ya esta seleccionado se
+                    # elimina de los destinatarios
+
+                    $clist->unselect_row ($fila, $columna);
+                    $clist->set_background ($fila, $color_blanco);
+                    $seleccionados =~ s/(,\s*$array_seleccionados[$i]\s*)|(\s*$array_seleccionados[$i]\s*,\s+)|(\s*$array_seleccionados[$i]\s*)//g;
+                    $entry_destino->set_text ($seleccionados);
+
+                    return 1;
+                }
+            }
+        }
+        # No esta seleccionado, se selecciona.
+    }
+    else
+    {
+        # Si seleciona la columna numero de telefono, se concede la
+        # "libertad" de poder hacer un boom de sms al mismo usuario,
+        # es decir, no se comprueba si esta repetido
+
+        $seleccion = $$datos{ $clist->get_text ($fila, $columna) };
+    }
+
+    if ($seleccion =~ /\S+\s*\(\s*(\S+)\s*\)\s*/)
+    {
+        $aux .= ($1);
+    }
+    else
+    {
+        $aux .= $seleccion;
+    }
+    $entry_destino->append_text ($aux);
+    $clist->set_background ($fila, $color_verde);
+    $clist->unselect_row ($fila, $columna);
+
+    return 1;
+}
+
+
+
+# Y todo para esto ;-)
+# programa principal:
+
+programa();
+
+#EOF

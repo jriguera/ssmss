@@ -1,0 +1,75 @@
+
+	ssmss   v 0.30 (c) Enero 2003 José Riguera López <jriguera@gmail.com>
+
+ssmss es un script en perl creado con objeto de poder enviar sms a los
+móviles de los habitantes del mundo.
+
+Este programa funciona tanto en una cutre consola, como en las X. 
+La GUI (interfaz gráfica) está realizada mediante GTK (gtkperl) que permite 
+establecer ciertas opciones y ver una agenda que muestra toda la lista 
+de contactos. Dicha agenda permite visualizar los contactos seleccionados, 
+añadir nuevos, borrar los pesados, e infinidad de cosas más.
+
+No obstante, si no quieres usar las X, no tienes instaladas las librerías de 
+GTK, o eres un fanático de la consola (ya sabes |, < , >, ...) TRANQUILO, 
+ahora, de serie, podrás usar este programa sin renunciar a sus virtudes 
+gráficas. En modo texto puedes gestinar la agenda (listar, añadir, borrar, ...).
+
+Pero, indudablemente, la principal ventaja de este programa son los módulos.
+Se me olvidó comentar que sin los módulos no puedes hacer nada, ya que son
+ellos quien implementan las funciones de enviar el sms. De esta forma, 
+aunque los malvados webmasters de internet cambien las web-pasarelas, el 
+programa principal no se verá afectado, sólo habrá que modificar el módulo
+correspondiente a esa web-pasarela.
+
+
+Instalación:
+
+El programa se llama "ssmss" y es un script en perl que debe tener los permisos
+de ejecucion deseados.
+Al ser un script en perl, es necesario que tengas perl instalado, y como
+mínimo el módulo GetOpt, si quieres la GUI, necesitarás también el módulo de GTK.
+
+1. Copia 'ssmss' a '/usr/local/bin'
+
+2. Comprueba los permisos (generalmente '-rwxr-xr-x' y 'root' como propietario 
+y grupo) Si no tienes bien los permisos, escribe en una consola: 'man chmod' y 
+lees la información, 'man chown' y vuelves a leer el texto. (pulsa q para salir).
+Una vez leido esto ya sabrás hacerlo sólo .
+Bueno, venga ;-) : 
+
+ 	chown root:root ssmss
+        chmod 0755 ssmss
+        
+3. Crea el directorio '~/.ssmss' y copia los ficheros 'ssmss.conf' y 
+'addressbook.txt' del directorio 'examples' a '~/.ssmss' y modifícalos a tu gusto 
+siguiendo las instruciones que en ellos se detallan.
+ 
+5. Crea el directorio '~/.ssmss/modules' y copia en ese directorio todos los 
+módulos del directorio 'modules' comprobando sus permisos. Acuerdate de establecer 
+bien la configuracion en el fichero '~/.ssmss/ssmss.conf'
+
+6. Ve a descansar y reflexionar sobre lo que has hecho, bastará con
+ unas dos horas aproximadamente, aunque para algunas personas son
+ necesarias cuatro, creo que en tu caso bastará con cinco ;-).
+
+7. Escribe 'ssmss' y ...
+
+
+
+Si estás interesado en ver como funcionan los módulos, te sientes con
+ganas para programar uno, ..., mira el módulo llamado Output.pm. Este módulo 
+es un ejemplo de como funciona un módulo, sólo bastará que rellenes las
+funciones con el código adecuado y ¡a rular!. De paso, participarás en un
+proyecto de software libre. Si no sabes programar (en perl) pero quieres 
+participar en el proyecto, ¡ya puedes!, ... ¿que cómo? ... Pues aportando
+ideas, traduciendo los mensajes a otros idiomas, etc. ¡Mándame un mail ahora!
+
+Si probaste el programa y te encató o, por el contrario, viste la mayor chapuza
+jamás imaginada, no dudes en escribirme ;-). Si sólo te pareció un programa
+más, no mandes nada (salvo que quieras hacer una donación).
+
+
+	José Riguera López <jriguera@gmail.com>
+
+#EOF
