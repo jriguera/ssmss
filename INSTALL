@@ -1,0 +1,29 @@
+Installation:
+
+The program is called "ssmss" and is a perl script with execution permission.
+As a perl script, you need to have perl installed, minimum getopt module,  and 
+if you want the GUI, you also need the GTK module.
+
+1. Copy 'ssmss' to '/usr/local/bin'
+
+2. Check permissions (usually '-rwxr-xr-x' and 'root' as owner and group). If 
+you do not have these permissions, type in console: 'man chmod' and 'man chown'. 
+Once you read this, I think you will be able to do it ... Well, here you are:
+
+	chown root: root ssmss
+	chmod 0755 ssmss
+
+3. Create the directory '~/.ssmss' and copy the files 'ssmss.conf' and 
+'addressbook.txt' from 'examples' directory to '~/.ssmss'. You can edit those 
+files as you wish following the inside instructions.
+
+5. Create '~/.ssmss/modules' and copy in that folder all modules from directory 
+'modules' checking permissions. Remember to set up the modules in the 
+configuration file '~/.ssmss/ssmss.conf'.
+
+6. Go to rest and reflect on what you've done, just about two hours, although 
+some people need four, I think in your case;-) is enough with five.
+
+7. Type 'ssmss' and ...
+
+
